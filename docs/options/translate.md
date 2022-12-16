@@ -1,79 +1,445 @@
-<!--- This file was automatically generated. Do not modify it manually but use the docs/options/generate.sh script instead. -->
+local QBCore = exports['qb-core']:GetCoreObject()
+local robberyBusy = false
+local timeOut = false
 
-`translate.lua` options:
+-- Functions
 
-* `-h [<boolean>]` (default: `false`)<br/>This help.
-* `-md [<boolean>]` (default: `false`)<br/>Dump help in Markdown format.
-* `-config <string>` (default: `''`)<br/>Load options from this file.
-* `-save_config <string>` (default: `''`)<br/>Save options to this file.
+--- This will convert a table's keys into an array
+--- @param tbl table
+--- @return array
+local function TableKeysToArray(tbl)
+    local array = {}
+    for k in pairs(tbl) do
+        array[#array+1] = k
+    end
+    return array
+end
 
-## Data options
+--- This will loop over the given table to check if the power stations in the table have been hit
+--- @param toLoop table
+--- @return boolean
+local function TableLoopStations(toLoop)
+    local hits = 0
+    for _, station in pairs(toLoop) do
+        if type(station) == 'table' then
+            local hits2 = 0
+            for _, station2 in pairs(station) do
+                if Config.PowerStations[station2].hit then hits2 += 1 end
+                if hits2 == #station then return true end
+            end
+        else
+            if Config.PowerStations[station].hit then hits += 1 end
+            if hits == #toLoop then return true end
+        end
+    end
+    return false
+end
 
-* `-src <string>` (required)<br/>Source sequences to translate.
-* `-tgt <string>` (default: `''`)<br/>Optional true target sequences.
-* `-output <string>` (default: `pred.txt`)<br/>Output file.
-* `-save_attention <string>` (default: `''`)<br/>Optional attention output file.
-* `-batch_size <number>` (default: `30`)<br/>Batch size.
-* `-idx_files [<boolean>]` (default: `false`)<br/>If set, source and target files are 'key value' with key match between source and target.
-* `-detokenize_output [<boolean>]` (default: `false`)<br/>Detokenize output.
+--- This will check what stations have been hit and update them accordingly
+--- @return nil
+local function CheckStationHits()
+    local policeHits = {}
+    local bankHits = {}
 
-## Translator options
+    for k, v in pairs(Config.CameraHits) do
+        local allStationsHitPolice = false
+        local allStationsHitBank = false
+        if type(v.type) == 'table' then
+            for _, cameraType in pairs(v.type) do
+                if cameraType == 'police' then
+                    if type(v.stationsToHitPolice) == 'table' then
+                        allStationsHitPolice = TableLoopStations(v.stationsToHitPolice)
+                    else
+                        allStationsHitPolice = Config.PowerStations[v.stationsToHitPolice].hit
+                    end
+                elseif cameraType == 'bank' then
+                    if type(v.stationsToHitBank) == 'table' then
+                        allStationsHitBank = TableLoopStations(v.stationsToHitBank)
+                    else
+                        allStationsHitBank = Config.PowerStations[v.stationsToHitBank].hit
+                    end
+                end
+            end
+        else
+            if v.type == 'police' then
+                if type(v.stationsToHitPolice) == 'table' then
+                    allStationsHitPolice = TableLoopStations(v.stationsToHitPolice)
+                else
+                    allStationsHitPolice = Config.PowerStations[v.stationsToHitPolice].hit
+                end
+            elseif v.type == 'bank' then
+                if type(v.stationsToHitBank) == 'table' then
+                    allStationsHitBank = TableLoopStations(v.stationsToHitBank)
+                else
+                    allStationsHitBank = Config.PowerStations[v.stationsToHitBank].hit
+                end
+            end
+        end
 
-* `-model <string>` (default: `''`)<br/>Path to the serialized model file.
-* `-lm_model <string>` (default: `''`)<br/>Path to serialized language model file.
-* `-lm_weight <number>` (default: `0.1`)<br/>Relative weight of language model.
-* `-beam_size <number>` (default: `5`)<br/>Beam size.
-* `-max_sent_length <number>` (default: `250`)<br/>Maximum output sentence length.
-* `-replace_unk [<boolean>]` (default: `false`)<br/>Replace the generated <unk> tokens with the source token that has the highest attention weight. If `-phrase_table` is provided, it will lookup the identified source token and give the corresponding target token. If it is not provided (or the identified source token does not exist in the table) then it will copy the source token
-* `-replace_unk_tagged [<boolean>]` (default: `false`)<br/>The same as -replace_unk, but wrap the replaced token in ｟unk:xxxxx｠ if it is not found in the phrase table.
-* `-lexical_constraints [<boolean>]` (default: `false`)<br/>Force the beam search to apply the translations from the phrase table.
-* `-limit_lexical_constraints [<boolean>]` (default: `false`)<br/>Prevents producing each lexical constraint more than required.
-* `-placeholder_constraints [<boolean>]` (default: `false`)<br/>Force the beam search to reproduce placeholders in the translation.
-* `-phrase_table <string>` (default: `''`)<br/>Path to source-target dictionary to replace `<unk>` tokens.
-* `-n_best <number>` (default: `1`)<br/>If > 1, it will also output an n-best list of decoded sentences.
-* `-max_num_unks <number>` (default: `inf`)<br/>All sequences with more `<unk>`s than this will be ignored during beam search.
-* `-target_subdict <string>` (default: `''`)<br/>Path to target words dictionary corresponding to the source.
-* `-pre_filter_factor <number>` (default: `1`)<br/>Optional, set this only if filter is being used. Before applying filters, hypotheses with top `beam_size * pre_filter_factor` scores will be considered. If the returned hypotheses voilate filters, then set this to a larger value to consider more.
-* `-length_norm <number>` (default: `0`)<br/>Length normalization coefficient (alpha). If set to 0, no length normalization.
-* `-coverage_norm <number>` (default: `0`)<br/>Coverage normalization coefficient (beta). An extra coverage term multiplied by beta is added to hypotheses scores. If is set to 0, no coverage normalization.
-* `-eos_norm <number>` (default: `0`)<br/>End of sentence normalization coefficient (gamma). If set to 0, no EOS normalization.
-* `-dump_input_encoding [<boolean>]` (default: `false`)<br/>Instead of generating target tokens conditional on the source tokens, we print the representation (encoding/embedding) of the input.
-* `-save_beam_to <string>` (default: `''`)<br/>Path to a file where the beam search exploration will be saved in a JSON format. Requires the `dkjson` package.
+        if allStationsHitPolice then
+            policeHits[k] = true
+        end
 
-## Tokenizer options
+        if allStationsHitBank then
+            bankHits[k] = true
+        end
+    end
 
-* `-tok_{src,tgt}_mode <string>` (accepted: `space`, `conservative`, `aggressive`; default: `conservative`)<br/>Define how aggressive should the tokenization be. `aggressive` only keeps sequences of letters/numbers, `conservative` allows a mix of alphanumeric as in: "2,000", "E65", "soft-landing", etc. `space` is doing space tokenization.
-* `-tok_{src,tgt}_joiner_annotate [<boolean>]` (default: `false`)<br/>Include joiner annotation using `-joiner` character.
-* `-tok_{src,tgt}_joiner <string>` (default: `￭`)<br/>Character used to annotate joiners.
-* `-tok_{src,tgt}_joiner_new [<boolean>]` (default: `false`)<br/>In `-joiner_annotate` mode, `-joiner` is an independent token.
-* `-tok_{src,tgt}_case_feature [<boolean>]` (default: `false`)<br/>Generate case feature.
-* `-tok_{src,tgt}_segment_case [<boolean>]` (default: `false`)<br/>Segment case feature, splits AbC to Ab C to be able to restore case
-* `-tok_{src,tgt}_segment_alphabet <table>` (accepted: `Tagalog`, `Hanunoo`, `Limbu`, `Yi`, `Hebrew`, `Latin`, `Devanagari`, `Thaana`, `Lao`, `Sinhala`, `Georgian`, `Kannada`, `Cherokee`, `Kanbun`, `Buhid`, `Malayalam`, `Han`, `Thai`, `Katakana`, `Telugu`, `Greek`, `Myanmar`, `Armenian`, `Hangul`, `Cyrillic`, `Ethiopic`, `Tagbanwa`, `Gurmukhi`, `Ogham`, `Khmer`, `Arabic`, `Oriya`, `Hiragana`, `Mongolian`, `Kangxi`, `Syriac`, `Gujarati`, `Braille`, `Bengali`, `Tamil`, `Bopomofo`, `Tibetan`)<br/>Segment all letters from indicated alphabet.
-* `-tok_{src,tgt}_segment_numbers [<boolean>]` (default: `false`)<br/>Segment numbers into single digits.
-* `-tok_{src,tgt}_segment_alphabet_change [<boolean>]` (default: `false`)<br/>Segment if alphabet change between 2 letters.
-* `-tok_{src,tgt}_bpe_model <string>` (default: `''`)<br/>Apply Byte Pair Encoding if the BPE model path is given. If the option is used, BPE related options will be overridden/set automatically if the BPE model specified by `-bpe_model` is learnt using `learn_bpe.lua`.
-* `-tok_{src,tgt}_bpe_EOT_marker <string>` (default: `</w>`)<br/>Marker used to mark the End of Token while applying BPE in mode 'prefix' or 'both'.
-* `-tok_{src,tgt}_bpe_BOT_marker <string>` (default: `<w>`)<br/>Marker used to mark the Beginning of Token while applying BPE in mode 'suffix' or 'both'.
-* `-tok_{src,tgt}_bpe_case_insensitive [<boolean>]` (default: `false`)<br/>Apply BPE internally in lowercase, but still output the truecase units. This option will be overridden/set automatically if the BPE model specified by `-bpe_model` is learnt using `learn_bpe.lua`.
-* `-tok_{src,tgt}_bpe_mode <string>` (accepted: `suffix`, `prefix`, `both`, `none`; default: `suffix`)<br/>Define the BPE mode. This option will be overridden/set automatically if the BPE model specified by `-bpe_model` is learnt using `learn_bpe.lua`. `prefix`: append `-bpe_BOT_marker` to the begining of each word to learn prefix-oriented pair statistics; `suffix`: append `-bpe_EOT_marker` to the end of each word to learn suffix-oriented pair statistics, as in the original Python script; `both`: `suffix` and `prefix`; `none`: no `suffix` nor `prefix`.
+    policeHits = TableKeysToArray(policeHits)
+    bankHits = TableKeysToArray(bankHits)
 
-## Cuda options
+    -- table.type checks if it's empty as well, if it's empty it will return the type 'empty' instead of 'array'
+    if table.type(policeHits) == 'array' then Config.OnPoliceCameraHit(policeHits) end
+    if table.type(bankHits) == 'array' then TriggerClientEvent("qb-bankrobbery:client:BankSecurity", -1, bankHits, false) end
+end
 
-* `-gpuid <table>` (default: `0`)<br/>List of GPU identifiers (1-indexed). CPU is used when set to 0.
-* `-fallback_to_cpu [<boolean>]` (default: `false`)<br/>If GPU can't be used, rollback on the CPU.
-* `-fp16 [<boolean>]` (default: `false`)<br/>Use half-precision float on GPU.
-* `-no_nccl [<boolean>]` (default: `false`)<br/>Disable usage of nccl in parallel mode.
+--- This will do a quick check to see if all stations have been hit
+--- @return boolean
+local function AllStationsHit()
+    local hit = 0
+    for k in pairs(Config.PowerStations) do
+        if Config.PowerStations[k].hit then
+            hit += 1
+        end
+    end
+    return hit >= Config.HitsNeeded
+end
 
-## HookManager options
+--- This will check if the given coords are in the area of the given distance of a powerstation
+--- @param coords vector3
+--- @param dist number
+--- @return boolean
+local function IsNearPowerStation(coords, dist)
+    for _, v in pairs(Config.PowerStations) do
+        if #(coords - v.coords) < dist then
+            return true
+        end
+    end
+    return false
+end
 
-* `-hook_file <string>` (default: `''`)<br/>Pointer to a lua file registering hooks for the current process
+-- Events
 
-## Logger options
+RegisterNetEvent('qb-bankrobbery:server:setBankState', function(bankId)
+    if robberyBusy then return end
+    if bankId == "paleto" then
+        if Config.BigBanks["paleto"]["isOpened"] or #(GetEntityCoords(GetPlayerPed(source)) - Config.BigBanks["paleto"]["coords"]) > 2.5 then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:setBankState", extraInfo = " (paleto) ", source = source}))
+        end
+        Config.BigBanks["paleto"]["isOpened"] = true
+        TriggerEvent('qb-bankrobbery:server:setTimeout')
+    elseif bankId == "pacific" then
+        if Config.BigBanks["pacific"]["isOpened"] or #(GetEntityCoords(GetPlayerPed(source)) - Config.BigBanks["pacific"]["coords"][2]) > 2.5 then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:setBankState", extraInfo = " (pacific) ", source = source}))
+        end
+        Config.BigBanks["pacific"]["isOpened"] = true
+        TriggerEvent('qb-bankrobbery:server:setTimeout')
+    else
+        if Config.SmallBanks[bankId]["isOpened"] or #(GetEntityCoords(GetPlayerPed(source)) - Config.SmallBanks[bankId]["coords"]) > 2.5 then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:setBankState", extraInfo = " (smallbank "..bankId..") ", source = source}))
+        end
+        Config.SmallBanks[bankId]["isOpened"] = true
+        TriggerEvent('qb-bankrobbery:server:SetSmallBankTimeout', bankId)
+    end
+    TriggerClientEvent('qb-bankrobbery:client:setBankState', -1, bankId)
+    robberyBusy = true
+    Config.OnRobberyStart(bankId)
+end)
 
-* `-log_file <string>` (default: `''`)<br/>Output logs to a file under this path instead of stdout - if file name ending with json, output structure json.
-* `-disable_logs [<boolean>]` (default: `false`)<br/>If set, output nothing.
-* `-log_level <string>` (accepted: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `NONE`; default: `INFO`)<br/>Output logs at this level and above.
+RegisterNetEvent('qb-bankrobbery:server:setLockerState', function(bankId, lockerId, state, bool)
+    if bankId == "paleto" or bankId == "pacific" then
+        if #(GetEntityCoords(GetPlayerPed(source)) - Config.BigBanks[bankId]["lockers"][lockerId]["coords"]) > 2.5 then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:setLockerState", extraInfo = " ("..bankId..") ", source = source}))
+        end
+        Config.BigBanks[bankId]["lockers"][lockerId][state] = bool
+    else
+        if #(GetEntityCoords(GetPlayerPed(source)) - Config.SmallBanks[bankId]["lockers"][lockerId]["coords"]) > 2.5 then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:setLockerState", extraInfo = " (smallbank "..bankId..") ", source = source}))
+        end
+        Config.SmallBanks[bankId]["lockers"][lockerId][state] = bool
+    end
+    TriggerClientEvent('qb-bankrobbery:client:setLockerState', -1, bankId, lockerId, state, bool)
+end)
 
-## Other options
+RegisterNetEvent('qb-bankrobbery:server:recieveItem', function(type, bankId, lockerId)
+    local src = source
+    local ply = QBCore.Functions.GetPlayer(src)
+    if not ply then return end
+    if type == "small" then
+        if #(GetEntityCoords(GetPlayerPed(src)) - Config.SmallBanks[bankId]["lockers"][lockerId]["coords"]) > 2.5 then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:receiveItem", extraInfo = " (smallbank "..bankId..") ", source = source}))
+        end
+        local itemType = math.random(#Config.RewardTypes)
+        local WeaponChance = math.random(1, 50)
+        local odd1 = math.random(1, 50)
+        local tierChance = math.random(1, 100)
+        local tier
+        if tierChance < 50 then tier = 1 elseif tierChance >= 50 and tierChance < 80 then tier = 2 elseif tierChance >= 80 and tierChance < 95 then tier = 3 else tier = 4 end
+        if WeaponChance ~= odd1 then
+            if tier ~= 4 then
+                 if Config.RewardTypes[itemType].type == "item" then
+                    local item = Config.LockerRewards["tier"..tier][math.random(#Config.LockerRewards["tier"..tier])]
+                    local itemAmount = math.random(item.minAmount, item.maxAmount)
+                    ply.Functions.AddItem(item.item, itemAmount)
+                    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items[item.item], "add")
+                 elseif Config.RewardTypes[itemType].type == "money" then
+                    local info = {
+                        worth = math.random(2300, 3200)
+                    }
+                    ply.Functions.AddItem('markedbills', math.random(2,3), false, info)
+                    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['markedbills'], "add")
+                end
+            else
+                ply.Functions.AddItem('security_card_01', 1)
+                TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['security_card_01'], "add")
+            end
+        else
+            ply.Functions.AddItem('weapon_stungun', 1)
+            TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['weapon_stungun'], "add")
+        end
+    elseif type == "paleto" then
+        if #(GetEntityCoords(GetPlayerPed(source)) - Config.BigBanks["paleto"]["lockers"][lockerId]["coords"]) > 2.5 then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:receiveItem", extraInfo = " (paleto) ", source = source}))
+        end
+        local itemType = math.random(#Config.RewardTypes)
+        local tierChance = math.random(1, 100)
+        local WeaponChance = math.random(1, 10)
+        local odd1 = math.random(1, 10)
+        local tier
+        if tierChance < 25 then tier = 1 elseif tierChance >= 25 and tierChance < 70 then tier = 2 elseif tierChance >= 70 and tierChance < 95 then tier = 3 else tier = 4 end
+        if WeaponChance ~= odd1 then
+            if tier ~= 4 then
+                 if Config.RewardTypes[itemType].type == "item" then
+                    local item = Config.LockerRewardsPaleto["tier"..tier][math.random(#Config.LockerRewardsPaleto["tier"..tier])]
+                    local itemAmount = math.random(item.minAmount, item.maxAmount)
+                    ply.Functions.AddItem(item.item, itemAmount)
+                    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items[item.item], "add")
+                 elseif Config.RewardTypes[itemType].type == "money" then
+                    local info = {
+                        worth = math.random(4000, 6000)
+                    }
+                    ply.Functions.AddItem('markedbills', math.random(1,4), false, info)
+                    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['markedbills'], "add")
+                 end
+            else
+                ply.Functions.AddItem('security_card_02', 1)
+                TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['security_card_02'], "add")
+            end
+        else
+            ply.Functions.AddItem('weapon_vintagepistol', 1)
+            TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['weapon_vintagepistol'], "add")
+        end
+    elseif type == "pacific" then
+        if #(GetEntityCoords(GetPlayerPed(source)) - Config.BigBanks["pacific"]["lockers"][lockerId]["coords"]) > 2.5 then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:receiveItem", extraInfo = " (pacific) ", source = source}))
+        end
+        local itemType = math.random(#Config.RewardTypes)
+        local WeaponChance = math.random(1, 100)
+        local odd1 = math.random(1, 100)
+        local odd2 = math.random(1, 100)
+        local tierChance = math.random(1, 100)
+        local tier
+        if tierChance < 10 then tier = 1 elseif tierChance >= 25 and tierChance < 50 then tier = 2 elseif tierChance >= 50 and tierChance < 95 then tier = 3 else tier = 4 end
+        if WeaponChance ~= odd1 or WeaponChance ~= odd2 then
+            if tier ~= 4 then
+                if Config.RewardTypes[itemType].type == "item" then
+                    local item = Config.LockerRewardsPacific["tier"..tier][math.random(#Config.LockerRewardsPacific["tier"..tier])]
+                    local maxAmount
+                    if tier == 3 then maxAmount = 7 elseif tier == 2 then maxAmount = 18 else maxAmount = 25 end
+                    local itemAmount = math.random(maxAmount)
+                    ply.Functions.AddItem(item.item, itemAmount)
+                    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items[item.item], "add")
+                elseif Config.RewardTypes[itemType].type == "money" then
+                    local info = {
+                        worth = math.random(19000, 21000)
+                    }
+                    ply.Functions.AddItem('markedbills', math.random(1,4), false, info)
+                    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['markedbills'], "add")
+                end
+            else
+                local info = {
+                    worth = math.random(19000, 21000)
+                }
+                ply.Functions.AddItem('markedbills', math.random(1,4), false, info)
+                TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['markedbills'], "add")
+                info = {
+                    crypto = math.random(1, 3)
+                }
+                ply.Functions.AddItem("cryptostick", 1, false, info)
+                TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['cryptostick'], "add")
+            end
+        else
+            local chance = math.random(1, 2)
+            local odd = math.random(1, 2)
+            if chance == odd then
+                ply.Functions.AddItem('weapon_microsmg', 1)
+                TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['weapon_microsmg'], "add")
+            else
+                ply.Functions.AddItem('weapon_minismg', 1)
+                TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['weapon_minismg'], "add")
+            end
+        end
+    end
+end)
 
-* `-time [<boolean>]` (default: `false`)<br/>Measure average translation time.
+AddEventHandler('qb-bankrobbery:server:setTimeout', function()
+    if robberyBusy or timeOut then return end
+    timeOut = true
+    CreateThread(function()
+        SetTimeout(60000 * 90, function()
+            for k in pairs(Config.BigBanks["pacific"]["lockers"]) do
+                Config.BigBanks["pacific"]["lockers"][k]["isBusy"] = false
+                Config.BigBanks["pacific"]["lockers"][k]["isOpened"] = false
+            end
+            for k in pairs(Config.BigBanks["paleto"]["lockers"]) do
+                Config.BigBanks["paleto"]["lockers"][k]["isBusy"] = false
+                Config.BigBanks["paleto"]["lockers"][k]["isOpened"] = false
+            end
+            TriggerClientEvent('qb-bankrobbery:client:ClearTimeoutDoors', -1)
+            Config.BigBanks["paleto"]["isOpened"] = false
+            Config.BigBanks["pacific"]["isOpened"] = false
+            timeOut = false
+            robberyBusy = false
+            Config.OnRobberyTimeoutEnd("paleto")
+            Config.OnRobberyTimeoutEnd("pacific")
+        end)
+    end)
+end)
+
+AddEventHandler('qb-bankrobbery:server:SetSmallBankTimeout', function(bankId)
+    if robberyBusy or timeOut then return end
+    timeOut = true
+    CreateThread(function()
+        SetTimeout(60000 * 30, function()
+            for k in pairs(Config.SmallBanks[bankId]["lockers"]) do
+                Config.SmallBanks[bankId]["lockers"][k]["isOpened"] = false
+                Config.SmallBanks[bankId]["lockers"][k]["isBusy"] = false
+            end
+            TriggerClientEvent('qb-bankrobbery:client:ResetFleecaLockers', -1, bankId)
+            timeOut = false
+            robberyBusy = false
+            Config.OnRobberyTimeoutEnd(bankId)
+        end)
+    end)
+end)
+
+RegisterNetEvent('qb-bankrobbery:server:callCops', function(type, bank, coords)
+    if type == "small" then
+        if not Config.SmallBanks[bank]["alarm"] then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:callCops", extraInfo = " (smallbank "..bank..") ", source = source}))
+        end
+    elseif type == "paleto" then
+        if not Config.BigBanks["paleto"]["alarm"] then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:callCops", extraInfo = " (paleto) ", source = source}))
+        end
+    elseif type == "pacific" then
+        if not Config.BigBanks["pacific"]["alarm"] then
+            return error(Lang:t("error.event_trigger_wrong", {event = "qb-bankrobbery:server:callCops", extraInfo = " (pacific) ", source = source}))
+        end
+    end
+    TriggerClientEvent("qb-bankrobbery:client:robberyCall", -1, type, coords)
+end)
+
+RegisterNetEvent('qb-bankrobbery:server:SetStationStatus', function(key, isHit)
+    Config.PowerStations[key].hit = isHit
+    TriggerClientEvent("qb-bankrobbery:client:SetStationStatus", -1, key, isHit)
+    if AllStationsHit() then
+        exports["qb-weathersync"]:setBlackout(true)
+        TriggerClientEvent("qb-bankrobbery:client:disableAllBankSecurity", -1)
+        Config.OnBlackout(true)
+        CreateThread(function()
+            SetTimeout(60000 * Config.BlackoutTimer, function()
+                exports["qb-weathersync"]:setBlackout(false)
+                TriggerClientEvent("qb-bankrobbery:client:enableAllBankSecurity", -1)
+                Config.OnBlackout(false)
+            end)
+        end)
+    else
+        CheckStationHits()
+    end
+end)
+
+RegisterNetEvent('qb-bankrobbery:server:removeElectronicKit', function()
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then return end
+    Player.Functions.RemoveItem('electronickit', 1)
+    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items["electronickit"], "remove")
+    Player.Functions.RemoveItem('trojan_usb', 1)
+    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items["trojan_usb"], "remove")
+end)
+
+RegisterNetEvent('qb-bankrobbery:server:removeBankCard', function(number)
+    local src = source
+    local Player = QBCore.Functions.GetPlayer(src)
+    if not Player then return end
+    Player.Functions.RemoveItem('security_card_'..number, 1)
+    TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items['security_card_'..number], "remove")
+end)
+
+RegisterNetEvent('thermite:StartServerFire', function(coords, maxChildren, isGasFire)
+    local src = source
+    local ped = GetPlayerPed(src)
+    local coords2 = GetEntityCoords(ped)
+    local thermiteCoords = Config.BigBanks['pacific'].thermite[1].coords
+    local thermite2Coords = Config.BigBanks['pacific'].thermite[2].coords
+    local thermite3Coords = Config.BigBanks['paleto'].thermite[1].coords
+    if #(coords2 - thermiteCoords) < 10 or #(coords2 - thermite2Coords) < 10 or #(coords2 - thermite3Coords) < 10 or IsNearPowerStation(coords2, 10) then
+        TriggerClientEvent("thermite:StartFire", -1, coords, maxChildren, isGasFire)
+    end
+end)
+
+RegisterNetEvent('thermite:StopFires', function()
+    TriggerClientEvent("thermite:StopFires", -1)
+end)
+
+-- Callbacks
+
+QBCore.Functions.CreateCallback('qb-bankrobbery:server:isRobberyActive', function(_, cb)
+    cb(robberyBusy)
+end)
+
+QBCore.Functions.CreateCallback('qb-bankrobbery:server:GetConfig', function(_, cb)
+    cb(Config.PowerStations, Config.BigBanks, Config.SmallBanks)
+end)
+
+QBCore.Functions.CreateCallback("thermite:server:check", function(source, cb)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player then return cb(false) end
+    if Player.Functions.RemoveItem("thermite", 1) then
+        TriggerClientEvent('inventory:client:ItemBox', source, QBCore.Shared.Items["thermite"], "remove")
+        cb(true)
+    else
+        cb(false)
+    end
+end)
+
+-- Items
+
+QBCore.Functions.CreateUseableItem("thermite", function(source)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player or not Player.Functions.GetItemByName('thermite') then return end
+	if Player.Functions.GetItemByName('lighter') then
+        TriggerClientEvent("thermite:UseThermite", source)
+    else
+        TriggerClientEvent('QBCore:Notify', source, Lang:t("error.missing_ignition_source"), "error")
+    end
+end)
+
+QBCore.Functions.CreateUseableItem("security_card_01", function(source)
+    local Player = QBCore.Functions.GetPlayer(source)
+	if not Player or not Player.Functions.GetItemByName('security_card_01') then return end
+    TriggerClientEvent("qb-bankrobbery:UseBankcardA", source)
+end)
+
+QBCore.Functions.CreateUseableItem("security_card_02", function(source)
+    local Player = QBCore.Functions.GetPlayer(source)
+	if not Player or not Player.Functions.GetItemByName('security_card_02') then return end
+    TriggerClientEvent("qb-bankrobbery:UseBankcardB", source)
+end)
+
+QBCore.Functions.CreateUseableItem("electronickit", function(source)
+    local Player = QBCore.Functions.GetPlayer(source)
+    if not Player or not Player.Functions.GetItemByName('electronickit') then return end
+    TriggerClientEvent("electronickit:UseElectronickit", source)
+end)
